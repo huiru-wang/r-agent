@@ -1,27 +1,18 @@
-from pathlib import Path
 from typing import Any, Dict
 
 from langchain.agents import create_agent
 from langchain_core.runnables import RunnableConfig
 
-from packages.config.app_config import AppConfig
+from packages.config.app_config import (
+    get_app_config,
+    get_model_config,
+    get_agent_config,
+)
 from packages.middleware.facotry import build_middlewares
 from packages.models.factory import create_chat_model
 from packages.tools.tools import get_available_tools
 
 from packages.agents.prompt import SYSTEM_PROMPT_TEMPLATE
-
-# Global config instance for LangGraph Local Server
-_config_cache: AppConfig | None = None
-
-
-def _get_app_config() -> AppConfig:
-    """Get or load AppConfig singleton."""
-    global _config_cache
-    if _config_cache is None:
-        config_path = Path(__file__).parent.parent.parent / "config.yaml"
-        _config_cache = AppConfig.from_yaml(config_path)
-    return _config_cache
 
 
 def create_main_agent(config: RunnableConfig | None = None) -> Any:
@@ -34,26 +25,34 @@ def create_main_agent(config: RunnableConfig | None = None) -> Any:
     Returns:
         Configured agent Runnable
     """
-    # Load app_config - either from config or from default yaml
+    # 获取 app config 默认配置
     if config is None:
-        app_config = _get_app_config()
+        app_config = get_app_config()
         agent_name = "main_agent"
         model_id = None
     else:
-        cfg = config.get("configurable", {})
+        cfg = config.get("configurable", {}) or {}
         app_config = cfg.get("app_config")
-        if app_config is None:
-            app_config = _get_app_config()
+        if (
+            app_config is None
+            or not hasattr(app_config, "models")
+            or not app_config.models
+        ):
+            app_config = get_app_config()
         agent_name = cfg.get("agent_name", "main_agent")
-        model_id = cfg.get("model_id") or cfg.get("model")
+        model_id = cfg.get("model_id") or cfg.get("model") or None
+        # Normalize empty string to None
+        if model_id is not None and not str(model_id).strip():
+            model_id = None
 
-    agent_config = app_config.get_agent_config(agent_name)
+    # agent 配置
+    agent_config = get_agent_config(agent_name)
 
-    # Fallback: get model_id from agent_config if not provided directly
+    # 未指定model，获取agent配置的 model
     if not model_id and agent_config and agent_config.model:
         model_id = agent_config.model
 
-    # Default to first model if still not found
+    # agent未配置model，获取app配置的首个model
     if not model_id and app_config.models:
         model_id = app_config.models[0].id
 
@@ -62,11 +61,11 @@ def create_main_agent(config: RunnableConfig | None = None) -> Any:
             "model_id must be provided in config or agent_config or default to first model"
         )
 
-    model_config = app_config.get_model_config(model_id)
+    model_config = get_model_config(model_id)
     if not model_config:
         raise ValueError(f"Model config not found for: {model_id}")
 
-    # Build system prompt from template
+    # 构建 system prompt
     prompt_data: Dict[str, str] = {
         "agent_name": agent_name,
         "soul": "You are helpful, harmless, and honest.",
@@ -86,14 +85,15 @@ def create_main_agent(config: RunnableConfig | None = None) -> Any:
         configurable["app_config"] = app_config
     runnable_config["configurable"] = configurable
 
-    # Get tools and middleware
+    # tools
     tools = get_available_tools(config=runnable_config, agent_config=agent_config)
+
+    # middleware
     middlewares = build_middlewares(config=runnable_config, agent_name=agent_name)
 
-    # Create chat model
-    model = create_chat_model(model_config)
+    model = create_chat_model(model_id)
 
-    # Create agent
+    # 创建 agent
     agent = create_agent(
         model=model, tools=tools, system_prompt=system_prompt, middleware=middlewares
     )

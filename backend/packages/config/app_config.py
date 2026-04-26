@@ -5,6 +5,16 @@ from typing import Any, List, Optional
 
 import yaml
 from pydantic import BaseModel, Field
+from .schema import (
+    AgentConfig,
+    CheckpointerConfig,
+    MemoryConfig,
+    ModelConfig,
+    SkillEvolutionConfig,
+    SummarizationConfig,
+    TitleConfig,
+    ToolConfig,
+)
 
 
 def resolve_env_vars(value: Any) -> Any:
@@ -22,78 +32,6 @@ def resolve_env_vars(value: Any) -> Any:
     return value
 
 
-class ModelConfig(BaseModel):
-    """Configuration schema for a chat model."""
-
-    id: str
-    display_name: str = ""
-    description: str = ""
-    use: str
-    model: str = ""
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    supports_vision: bool = False
-
-
-class ToolConfig(BaseModel):
-    """Configuration schema for a tool."""
-
-    name: str
-    use: str = ""
-    max_results: int = 5
-
-
-class CheckpointerConfig(BaseModel):
-    """Configuration schema for checkpointer."""
-
-    type: str = "sqlite"
-    connection_string: str = "checkpoints.db"
-
-
-class AgentConfig(BaseModel):
-    """Configuration schema for an agent."""
-
-    name: str
-    model: str = ""
-    tools: List[str] = Field(default_factory=list)
-
-
-class TitleConfig(BaseModel):
-    """Title generation configuration."""
-
-    enabled: bool = True
-    model: Optional[str] = None
-
-
-class SummarizationConfig(BaseModel):
-    """Summarization configuration."""
-
-    enabled: bool = True
-    model: Optional[str] = None
-    max_tokens: int = 500
-
-
-class MemoryConfig(BaseModel):
-    """Memory configuration."""
-
-    enabled: bool = True
-    storage_path: str = "memory.json"
-    debounce_seconds: int = 30
-    model_name: Optional[str] = None
-    max_facts: int = 100
-    fact_confidence_threshold: float = 0.7
-    injection_enabled: bool = True
-    max_injection_tokens: int = 2000
-
-
-class SkillEvolutionConfig(BaseModel):
-    """Skill evolution configuration."""
-
-    enabled: bool = False
-    evaluation_interval: int = 100
-    improvement_threshold: float = 0.1
-
-
 class AppConfig(BaseModel):
     """Application configuration loaded from config.yaml.
 
@@ -106,17 +44,11 @@ class AppConfig(BaseModel):
     tools: List[ToolConfig] = Field(default_factory=list)
     agents: List[AgentConfig] = Field(default_factory=list)
     checkpointer: Optional[CheckpointerConfig] = None
+    title: Optional[TitleConfig] = None
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "AppConfig":
-        """Load configuration from a YAML file.
-
-        Args:
-            path: Path to config.yaml file
-
-        Returns:
-            AppConfig instance with resolved environment variables
-        """
+        """从配置文件加载配置"""
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Configuration file not found: {path}")
@@ -156,23 +88,59 @@ class AppConfig(BaseModel):
 
         return cls.model_validate(config_data)
 
-    def get_model_config(self, id: str) -> Optional[ModelConfig]:
-        """Get model configuration by name."""
-        for model in self.models:
-            if model.id == id:
-                return model
-        return None
 
-    def get_tool_config(self, name: str) -> Optional[ToolConfig]:
-        """Get tool configuration by name."""
-        for tool in self.tools:
-            if tool.name == name:
-                return tool
-        return None
+# Global app config instance
+_app_config: Optional[AppConfig] = None
 
-    def get_agent_config(self, name: str) -> Optional[AgentConfig]:
-        """Get agent configuration by name."""
-        for agent in self.agents:
-            if agent.name == name:
-                return agent
-        return None
+
+def load_app_config(path: str | Path) -> "AppConfig":
+    """Load and set the global app config from a YAML file."""
+    global _app_config
+    _app_config = AppConfig.from_yaml(path)
+    return _app_config
+
+
+def get_app_config() -> "AppConfig":
+    """Get the global app config, loading from default path if needed."""
+    global _app_config
+    if _app_config is None:
+        default_path = Path(__file__).parent.parent.parent / "config.yaml"
+        _app_config = AppConfig.from_yaml(default_path)
+    return _app_config
+
+
+def get_model_config(id: str | None = None) -> "ModelConfig | None":
+    """Get model config by id, or first model if id is None."""
+    app_config = get_app_config()
+    if id is None:
+        return app_config.models[0] if app_config.models else None
+    for model in app_config.models:
+        if model.id == id:
+            return model
+    return None
+
+
+def get_tool_config(name: str) -> "ToolConfig | None":
+    """Get tool config by name."""
+    app_config = get_app_config()
+    for tool in app_config.tools:
+        if tool.name == name:
+            return tool
+    return None
+
+
+def get_agent_config(name: str) -> "AgentConfig | None":
+    """Get agent config by name."""
+    app_config = get_app_config()
+    for agent in app_config.agents:
+        if agent.name == name:
+            return agent
+    return None
+
+
+def get_title_config() -> "TitleConfig":
+    """Get title generation config from app config."""
+    title_config = get_app_config().title
+    if title_config is None:
+        return TitleConfig()
+    return title_config

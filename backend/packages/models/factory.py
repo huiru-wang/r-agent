@@ -2,6 +2,7 @@ import importlib
 from typing import Any, Type
 
 from packages.config import ModelConfig
+from packages.config.app_config import get_model_config
 
 
 def resolve_class(module_class_str: str) -> Type:
@@ -35,7 +36,7 @@ def resolve_class(module_class_str: str) -> Type:
     return getattr(module, class_name)
 
 
-def create_chat_model(model_config: ModelConfig) -> Any:
+def create_chat_model(model_id: str | None = None) -> Any:
     """Create a chat model instance from configuration.
 
     Args:
@@ -44,6 +45,11 @@ def create_chat_model(model_config: ModelConfig) -> Any:
     Returns:
         Instantiated chat model
     """
+    model_config = get_model_config(model_id)
+
+    if not model_config:
+        raise ValueError("Model config not found for")
+
     ChatModelClass = resolve_class(model_config.use)
 
     kwargs = {}
