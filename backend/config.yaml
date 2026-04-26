@@ -1,0 +1,54 @@
+config_version: 1.0.0
+log_level: info
+
+# ============================================================================
+# Models Configuration
+# ============================================================================
+# Configure available LLM models for the agent to use
+
+models:
+  - id: qwen-plus
+    display_name: qwen-plus
+    description: 阿里云百炼千问
+    use: langchain_openai:ChatOpenAI
+    model: qwen-plus
+    api_key: $DASHSCOPE_API_KEY
+    base_url: $DASHSCOPE_BASE_URL
+    supports_vision: true
+
+# ============================================================================
+# Tools Configuration
+# ============================================================================
+# Configure available tools for the agent to use
+
+tools:
+  # Web search tool (uses DuckDuckGo, no API key required)
+  - name: web_search
+    group: web
+    use: tools.builtins:web_search
+    max_results: 5
+
+agents:
+  - name: main_agent
+    model_id: qwen-plus
+    tools:
+    - web_search
+
+# ============================================================================
+# Memory Configuration
+# ============================================================================
+# Global memory mechanism
+# Stores user context and conversation history for personalized responses
+memory:
+  enabled: true
+  storage_path: memory.json # Path relative to backend directory
+  debounce_seconds: 30 # Wait time before processing queued updates
+  model_name: null # Use default model
+  max_facts: 100 # Maximum number of facts to store
+  fact_confidence_threshold: 0.7 # Minimum confidence for storing facts
+  injection_enabled: true # Whether to inject memory into system prompt
+  max_injection_tokens: 2000 # Maximum tokens for memory injection
+
+checkpointer:
+  type: sqlite
+  connection_string: checkpoints.db
